@@ -6,7 +6,7 @@
 #   scripts/git-ops.sh disarm [--image TAG] [--git-only]
 #   scripts/git-ops.sh bump
 #
-# Everything works in $OPERATOR_DIR, a separate HTTPS clone of the tracked branch, never in
+# Everything works in $OPERATOR_DIR, a separate clone of the tracked branch, never in
 # the main checkout. Its credential helper is `gh auth git-credential`, which uses Luke's gh
 # login or GH_TOKEN when that is set, so a push never depends on an unlocked SSH agent (P13).
 # Operator git runs without the user's global and system git config, so a global
@@ -34,20 +34,24 @@ _opgit() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT
 _og() { _opgit -C "$OPERATOR_DIR" "$@"; }
 _ogq() { quiet _opgit -C "$OPERATOR_DIR" "$@"; } # silent unless it fails
 
-op_expected_remote() { printf '%s' "${OPERATOR_REMOTE:-https://github.com/${REPO_SLUG}.git}"; }
+op_expected_remote() {
+  if [[ -n "${OPERATOR_REMOTE:-}" ]]; then printf '%s' "$OPERATOR_REMOTE"
+  elif [[ "${OPERATOR_GIT_PROTOCOL:-https}" == ssh ]]; then printf 'git@github.com:%s.git' "$REPO_SLUG"
+  else printf 'https://github.com/%s.git' "$REPO_SLUG"; fi
+}
 
-# The user's commit identity, copied into the clone, since operator git ignores the global config.
+# The main checkout's commit identity, copied into the clone; operator git ignores global config.
 _op_identity() {
   local key val
   for key in user.name user.email; do
     [[ -n "$(_og config --local --get "$key" 2>/dev/null || true)" ]] && continue
-    val="$(git config --global --get "$key" 2>/dev/null || true)"
-    [[ -n "$val" ]] || die "operator clone: no $key in the clone or the global git config"
+    val="$(git -C "$(main_root)" config --get "$key" 2>/dev/null || true)"
+    [[ -n "$val" ]] || die "operator clone: no $key in the clone or main checkout git config"
     _og config --local "$key" "$val"
   done
 }
 
-# Both URLs git will really use for origin must be the expected remote (HTTPS on GitHub).
+# Both URLs git will really use for origin must be the expected GitHub remote (HTTPS by default, SSH when configured).
 op_check_remote() {
   local want fetch push
   want="$(op_expected_remote)"

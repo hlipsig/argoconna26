@@ -1,2 +1,2 @@
 # The agent's GitHub App login (BOT_LOGIN in demo.env). Rule 6 checks the PR author against it.
-agent_login: argoconna26-agent[bot]
+agent_login: hlipsig-argoconna26-demo[bot]

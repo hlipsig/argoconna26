@@ -1,19 +1,20 @@
-# Proxy config, merged into the chart values. ${LLM_BUDGET_USD} is filled in from .env by
-# `make litellm-install` (envsubst), so the budget is not committed.
-# Model IDs (claude-api skill, 2026-11-01): rca = Claude Sonnet 5.5, judge = Claude Opus 5.5.
+# Proxy config, merged into the chart values. Subscription quotas are held by ChatGPT.
+# Both aliases use the signed-in ChatGPT subscription. Dollar spend is not metered
+# by this provider; rate limits below bound calls instead.
 proxy_config:
   model_list:
     - model_name: rca
       litellm_params:
-        model: anthropic/claude-sonnet-5-5
-        api_key: os.environ/ANTHROPIC_API_KEY
+        model: chatgpt/gpt-6.1-sol
+        rpm: 10
+        tpm: 100000
     - model_name: judge
       litellm_params:
-        model: anthropic/claude-opus-5-5
-        api_key: os.environ/ANTHROPIC_API_KEY
+        model: chatgpt/gpt-6.1-sol
+        rpm: 5
+        tpm: 50000
   litellm_settings:
-    max_budget: ${LLM_BUDGET_USD}
-    budget_duration: 30d
+    callbacks: [chatgpt_schema.schema_compat]
   router_settings:
     num_retries: 2
     request_timeout: 120

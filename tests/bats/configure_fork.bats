@@ -15,6 +15,9 @@ setup() {
   mkdir -p "$WORK"
   # A copy of the working tree (tracked and new files, so an unstaged script is included).
   ( cd "$REPO_ROOT" && git ls-files -z --cached --others --exclude-standard | tar --null -T - -cf - ) | tar -xf - -C "$WORK"
+  OLD_SLUG="$(sed -n 's/^REPO_SLUG=//p' "$WORK/demo.env")"
+  OLD_LOGIN="$(sed -n 's/^BOT_LOGIN=//p' "$WORK/demo.env")"
+  OLD_TEAM="$(sed -n 's/^PROMOTION_TEAM=//p' "$WORK/demo.env")"
   git -C "$WORK" init -q -b main
   git -C "$WORK" config user.email t@example.invalid
   git -C "$WORK" config user.name t

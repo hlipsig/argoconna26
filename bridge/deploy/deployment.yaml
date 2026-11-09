@@ -46,7 +46,7 @@ spec:
             capabilities: {drop: [ALL]}
           env:
             # Values from demo.env (the consistency check compares them).
-            - {name: REPO_SLUG, value: argo-multiverse-labs/argoconna26}
+            - {name: REPO_SLUG, value: hlipsig/argoconna26}
             - {name: TRACKED_BRANCH, value: main}
             - {name: HOLMES_URL, value: "http://holmes-holmes.aiops.svc"}
             - {name: HOLMES_TIMEOUT_S, value: "115"}
@@ -59,7 +59,7 @@ spec:
             - {name: ROLLOUT_FILE, value: apps/checkout/deploy/rollout.yaml}
             - {name: KUSTOMIZATION_FILE, value: apps/checkout/kustomization.yaml}
             - {name: CHECKOUT_CVE_TAG, value: v1.4.2}
-            - {name: BOT_LOGIN, value: "argoconna26-agent[bot]"}
+            - {name: BOT_LOGIN, value: "hlipsig-argoconna26-demo[bot]"}
             - {name: POLICY_CHECK_CONTEXT, value: policy-check}
             - {name: POLICY_CHECK_INTEGRATION_ID, value: "15368"}
             # Pinned at the bridge's defaults only so the optional Secret bridge-env (envFrom,

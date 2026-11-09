@@ -164,7 +164,7 @@ section_llm() {
   local key code info left live cum
   # shellcheck source=scripts/litellm.sh
   . "$COMMON_SH_DIR/litellm.sh"
-  if ! _have LITELLM_MASTER_KEY LLM_BUDGET_USD; then
+  if ! _have LITELLM_MASTER_KEY || { [[ "${LLM_PROVIDER:-}" != chatgpt ]] && ! _have LLM_BUDGET_USD; }; then
     check_fail "llm: LITELLM_MASTER_KEY or LLM_BUDGET_USD is missing in .env"; return 0
   fi
   if ! curl -sf --max-time 5 "${LITELLM_HOST_URL}/health/readiness" >/dev/null; then
@@ -178,9 +178,18 @@ section_llm() {
     -d "$(jq -nc --arg m "$LLM_ALIAS_RCA" '{model: $m, max_tokens: 5, messages: [{role: "user", content: "Reply ok."}]}')" \
     -K <(printf 'header = "Authorization: Bearer %s"\n' "$key") "${LITELLM_HOST_URL}/v1/chat/completions" || true)"
   if [[ "$code" == 200 ]]; then
-    check_pass "llm: a max_tokens 5 completion on alias $LLM_ALIAS_RCA returns 200"
+    check_pass "llm: completion on alias $LLM_ALIAS_RCA returns 200"
   else
     check_fail "llm: completion on alias $LLM_ALIAS_RCA returned HTTP ${code:-none}"
+  fi
+  if [[ "${LLM_PROVIDER:-}" == chatgpt ]]; then
+    if info="$(llm_call "$key" GET /key/info 2>/dev/null)" && jq -e '.info.rpm_limit == 10 and .info.tpm_limit == 100000' <<<"$info" >/dev/null; then
+      check_pass "llm: holmes key limits 10 requests/minute, 100000 tokens/minute"
+    else
+      check_fail "llm: ChatGPT key request/token limits missing or unreadable"
+    fi
+    check_warn "llm: ChatGPT subscription usage is not metered in dollars; dollar budget check unavailable"
+    return 0
   fi
   if info="$(llm_call "$key" GET /key/info 2>/dev/null)"; then
     left="$(jq -r '((.info.max_budget // 0) - (.info.spend // 0))' <<<"$info")"

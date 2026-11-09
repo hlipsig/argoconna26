@@ -94,3 +94,43 @@ destination the live rulesets do not already protect. See [docs/06-operations.md
 
 The fork path was checked on the upstream repository and by the tests in
 `tests/bats/configure_fork.bats` and `tests/bats/consistency.bats`, not from a real fork.
+
+## This fork: ChatGPT subscription backend
+
+The `rca` and `judge` aliases use `chatgpt/gpt-6.1-sol` with LiteLLM 1.106.4.
+No Anthropic or OpenAI API key is required. Run `make chatgpt-login` and complete
+the device login in your browser before `make build-all`. Enable device-code login
+in your ChatGPT security settings if the login flow asks for it.
+
+The login is separate from Codex's cached credentials. Its default path is
+`~/.config/litellm/chatgpt/auth.json`, outside this repository. `make litellm-install`
+loads it into a Kubernetes Secret and seeds one persistent, writable token file.
+One replica and one worker use it, so refresh tokens remain consistent across restarts.
+After signing in again, update the Secret with `make litellm-install`; to replace
+an already seeded login, remove only `/tokens/chatgpt/auth.json` from the LiteLLM
+pod and restart the deployment so its init container seeds the new login.
+
+Subscription usage counts against the signed-in account's allowance. LiteLLM does
+not report its dollar cost or remaining subscription quota, so dollar-budget
+checks are explicitly unavailable. Keys enforce 10 requests/minute and 100000
+tokens/minute, with additional per-model limits in the proxy config. These are
+rate limits, not a total-spend cap. The original Anthropic evaluation results do
+not validate this model; rerun the dry-run harness before claiming the same score.
+
+### Fedora WSL and the conference network
+
+Set `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` to the host's trusted CA bundle;
+on this laptop it is `/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem`.
+The kind setup copies this bundle into demo nodes when it differs, and the image
+builds accept it through a BuildKit secret. Argo CD trusts it for GitHub, and
+LiteLLM mounts it from a ConfigMap. TLS verification stays enabled.
+
+This laptop uses `OPERATOR_GIT_PROTOCOL=ssh` and a dedicated `GIT_SSH_COMMAND`
+in `.env`. SSH handles Git; GitHub CLI's separate login handles REST/GraphQL.
+For the first scene, leave `PREFLIGHT_L5B=auto` and use `make reset-demo`, then
+`make demo-rung-1`. Promotion-team setup is only needed for the later scenes.
+
+The pinned ChatGPT adapter drops the Responses `text` field, including JSON schemas.
+`platform/litellm/chatgpt_schema.py` preserves this field using a small compatibility
+callback loaded by LiteLLM. Native structured output was verified against the
+subscription backend before deployment; the bridge still validates every RCA.

@@ -36,6 +36,47 @@ extraResources:
       ports:
         - {name: http, port: 4000, targetPort: http, nodePort: 30400}
 
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: litellm-chatgpt-tokens
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests: {storage: 1Mi}
+
 resources:
   requests: {cpu: 200m, memory: 1Gi}
   limits: {memory: 2Gi}
+
+# One process and one persistent token file prevent competing OAuth refreshes.
+numWorkers: 1
+strategy:
+  type: Recreate
+envVars:
+  PYTHONPATH: /etc/litellm/compat
+  CHATGPT_TOKEN_DIR: /tokens/chatgpt
+  SSL_CERT_FILE: /trust/ca-bundle.pem
+  REQUESTS_CA_BUNDLE: /trust/ca-bundle.pem
+extraInitContainers:
+  - name: seed-chatgpt-login
+    image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
+    command: [sh, -ec]
+    args:
+      - 'if [ ! -s /tokens/chatgpt/auth.json ]; then cp /login/auth.json /tokens/chatgpt/auth.json; fi; chmod 600 /tokens/chatgpt/auth.json'
+    volumeMounts:
+      - {name: chatgpt-login, mountPath: /login, readOnly: true}
+      - {name: chatgpt-tokens, mountPath: /tokens/chatgpt}
+volumes:
+  - name: schema-compat
+    configMap: {name: litellm-schema-compat}
+  - name: host-trust
+    configMap: {name: demo-ca-bundle}
+  - name: chatgpt-login
+    secret: {secretName: litellm-chatgpt-auth}
+  - name: chatgpt-tokens
+    persistentVolumeClaim: {claimName: litellm-chatgpt-tokens}
+volumeMounts:
+  - {name: schema-compat, mountPath: /etc/litellm/compat, readOnly: true}
+  - {name: host-trust, mountPath: /trust, readOnly: true}
+  - {name: chatgpt-tokens, mountPath: /tokens/chatgpt}

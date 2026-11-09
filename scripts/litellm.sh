@@ -41,7 +41,7 @@ ensure_key() {
     log_info "removed the old key with alias $alias"
   fi
   new="$(llm_master POST /key/generate "$(jq -nc --arg a "$alias" --arg m "$model" --argjson b "$budget" \
-    '{key_alias: $a, models: [$m], max_budget: $b}')" | jq -r '.key // empty')"
+    '{key_alias: $a, models: [$m], max_budget: $b} + (if $b == null then {rpm_limit: 10, tpm_limit: 100000} else {} end)')" | jq -r '.key // empty')"
   [[ -n "$new" ]] || die "LiteLLM returned no key for $alias"
   _new_secret_dir
   _put OPENAI_API_KEY "$new"
@@ -49,6 +49,13 @@ ensure_key() {
 }
 
 cmd_keys() {
+  if [[ "${LLM_PROVIDER:-}" == chatgpt ]]; then
+    _have LITELLM_MASTER_KEY || die "LITELLM_MASTER_KEY is missing in .env"
+    wait_for "LiteLLM at $LITELLM_HOST_URL" 180 curl -sf --max-time 5 "${LITELLM_HOST_URL}/health/readiness"
+    ensure_key holmes holmes-llm "$LLM_ALIAS_RCA" null
+    ensure_key judge judge-llm "$LLM_ALIAS_JUDGE" null
+    return
+  fi
   _have LITELLM_MASTER_KEY LLM_BUDGET_USD || die "LITELLM_MASTER_KEY or LLM_BUDGET_USD is missing in .env"
   wait_for "LiteLLM at $LITELLM_HOST_URL" 180 curl -sf --max-time 5 "${LITELLM_HOST_URL}/health/readiness"
   local holmes_budget
@@ -91,6 +98,10 @@ cmd_spend_export() {
 }
 
 cmd_spend() {
+  if [[ "${LLM_PROVIDER:-}" == chatgpt ]]; then
+    printf 'ChatGPT subscription: dollar spend and remaining quota are unavailable from LiteLLM. Key limits: 10 requests/minute, 100000 tokens/minute.\n'
+    return
+  fi
   _have LITELLM_MASTER_KEY LLM_BUDGET_USD || die "LITELLM_MASTER_KEY or LLM_BUDGET_USD is missing in .env"
   local live cum
   live="$(live_spend)"
@@ -100,6 +111,7 @@ cmd_spend() {
 }
 
 cmd_budget_check() {
+  [[ "${LLM_PROVIDER:-}" != chatgpt ]] || die "Dollar budget enforcement is unavailable for ChatGPT subscriptions; use the configured request/token limits"
   _have LITELLM_MASTER_KEY || die "LITELLM_MASTER_KEY is missing in .env"
   local key code n body resp
   key="$(llm_master POST /key/generate "$(jq -nc --arg m "$LLM_ALIAS_RCA" \

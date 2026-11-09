@@ -144,3 +144,26 @@ run_budget() { ( cd "$FIXTURE" && "$REPO_ROOT/scripts/litellm.sh" budget-check )
   [ "$status" -ne 0 ]
   [[ "$output" == *"not enforced"* ]]
 }
+
+@test "ChatGPT keys have request limits without requiring a dollar budget" {
+  printf 'LLM_PROVIDER=chatgpt\nLLM_BUDGET_USD=\n' >> "$FIXTURE/.env"
+  run run_keys
+  [ "$status" -eq 0 ]
+  jq -se 'length == 2 and all(.[]; .max_budget == null and .rpm_limit == 10 and .tpm_limit == 100000)' "$STATE/generated"
+}
+
+@test "ChatGPT spend reports unavailable dollar accounting without network calls" {
+  printf 'LLM_PROVIDER=chatgpt\nLLM_BUDGET_USD=\n' >> "$FIXTURE/.env"
+  run bash -c 'cd "$1"; "$2/scripts/litellm.sh" spend' _ "$FIXTURE" "$REPO_ROOT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"dollar spend and remaining quota are unavailable"* ]]
+  ! grep -q "^CURL:" "$CALLS"
+}
+
+@test "ChatGPT dollar budget check refuses to claim budget enforcement" {
+  printf 'LLM_PROVIDER=chatgpt\n' >> "$FIXTURE/.env"
+  run bash -c 'cd "$1"; "$2/scripts/litellm.sh" budget-check' _ "$FIXTURE" "$REPO_ROOT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Dollar budget enforcement is unavailable"* ]]
+  ! grep -q "^CURL:" "$CALLS"
+}

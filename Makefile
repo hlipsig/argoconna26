@@ -108,6 +108,7 @@ kind-cluster: ## Create the kind cluster (skips when it exists)
 	chmod 600 "$$KUBECONFIG"
 	require_context
 	k wait --for=condition=Ready nodes --all --timeout=120s
+	$(ROOT)/scripts/host-trust.sh
 
 .PHONY: rm-kind
 rm-kind: ## Delete the kind cluster and its isolated kubeconfig
@@ -135,9 +136,16 @@ helm-repos: ## Add the Helm repos to the isolated Helm config
 .PHONY: argocd-install
 argocd-install: helm-repos ## Install Argo CD (skips when unchanged)
 	@$(LOCKED)
+	extra=()
+	if [[ -s "$${SSL_CERT_FILE:-}" ]]; then
+	  cert_values="$$(mktemp --suffix=.yaml)"
+	  trap 'rm -f "$$cert_values"' EXIT
+	  CA_BUNDLE="$$SSL_CERT_FILE" yq -n '.configs.tls.certificates."github.com" = load_str(strenv(CA_BUNDLE))' > "$$cert_values"
+	  extra=("$$cert_values")
+	fi
 	helm_ensure "$$ARGOCD_RELEASE" argo/argo-cd "$$ARGOCD_CHART_VERSION" "$$NS_ARGOCD" \
 	  $(ROOT)/platform/argocd/values.yaml $(ROOT)/platform/argocd/notifications-cdevents.yaml \
-	  $(ROOT)/platform/argocd/notifications-bridge.yaml
+	  $(ROOT)/platform/argocd/notifications-bridge.yaml "$${extra[@]}"
 	k rollout status statefulset/argocd-application-controller -n "$$NS_ARGOCD" --timeout=300s
 
 .PHONY: argocd-password
@@ -165,6 +173,9 @@ grafana-token: ## Service account + token for cdevents-sim's Grafana annotations
 kps-install: helm-repos ## Install kube-prometheus-stack (needs the grafana-admin Secret)
 	@$(LOCKED)
 	k get secret grafana-admin -n "$$NS_MONITORING" >/dev/null 2>&1 || die "grafana-admin Secret missing: run 'make secrets-base' first"
+	[[ -s "$${SSL_CERT_FILE:-}" ]] || die "SSL_CERT_FILE must name the host trusted CA bundle"
+	k create configmap demo-ca-bundle -n "$$NS_MONITORING" --from-file=ca-bundle.pem="$$SSL_CERT_FILE" \
+	  --dry-run=client -o yaml | k apply --server-side --field-manager=host-trust -f - >/dev/null
 	helm_ensure "$$KPS_RELEASE" prometheus-community/kube-prometheus-stack "$$KPS_CHART_VERSION" "$$NS_MONITORING" $(ROOT)/platform/kps/values.yaml
 	# helm --wait covers only chart-owned workloads. The Prometheus StatefulSet comes from the
 	# operator afterwards, so wait for it too (verify-idempotent snapshots right after this).
@@ -178,9 +189,18 @@ litellm-install: ## Install LiteLLM and its Postgres (needs the litellm Secrets 
 	for s in litellm-masterkey litellm-db litellm-env; do
 	  k get secret "$$s" -n "$$NS_AIOPS" >/dev/null 2>&1 || die "Secret $$s missing: run 'make secrets-base' first"
 	done
-	[[ -n "$${LLM_BUDGET_USD:-}" ]] || die "LLM_BUDGET_USD is missing in .env"
+	# ChatGPT uses subscription quotas rather than a metered API budget.
+	[[ -s "$${SSL_CERT_FILE:-}" ]] || die "SSL_CERT_FILE must name the host trusted CA bundle"
+	k create configmap demo-ca-bundle -n "$$NS_AIOPS" --from-file=ca-bundle.pem="$$SSL_CERT_FILE" \
+	  --dry-run=client -o yaml | k apply --server-side --field-manager=host-trust -f - >/dev/null
+	k create configmap litellm-schema-compat -n "$$NS_AIOPS" --from-file=chatgpt_schema.py=$(ROOT)/platform/litellm/chatgpt_schema.py \
+	  --dry-run=client -o yaml | k apply --server-side --field-manager=chatgpt-schema -f - >/dev/null
+	chatgpt_auth="$${CHATGPT_AUTH_PATH:-$$HOME/.config/litellm/chatgpt/auth.json}"
+	[[ -s "$$chatgpt_auth" ]] || die "ChatGPT login missing: run make chatgpt-login first"
+	k create secret generic litellm-chatgpt-auth -n "$$NS_AIOPS" --from-file=auth.json="$$chatgpt_auth" \
+	  --dry-run=client -o yaml | k apply --server-side --field-manager=chatgpt-login -f - >/dev/null
 	k apply -f $(ROOT)/platform/litellm/postgres.yaml
-	k rollout status statefulset/litellm-postgres -n "$$NS_AIOPS" --timeout=180s
+	k rollout status statefulset/litellm-postgres -n "$$NS_AIOPS" --timeout=900s
 	cfg="$$(mktemp)"
 	envsubst '$${LLM_BUDGET_USD}' < $(ROOT)/platform/litellm/config.yaml > "$$cfg"
 	rc=0
@@ -246,7 +266,9 @@ llm-spend: ## Live and cumulative LLM spend against the budget
 
 # build_image NAME DIR: docker build NAME:latest-build with the pinned base images.
 IMG_BUILD = build_image() { \
-	  docker build -q -t "$$1:latest-build" --build-arg PYTHON_IMAGE="$$PYTHON_IMAGE" --build-arg UV_IMAGE="$$UV_IMAGE" "$$2" >/dev/null; \
+	  local -a cert_args=(); \
+	  [[ -z "$${SSL_CERT_FILE:-}" ]] || cert_args=(--secret "id=host_ca,src=$$SSL_CERT_FILE"); \
+	  docker build "$${cert_args[@]}" -q -t "$$1:latest-build" --build-arg PYTHON_IMAGE="$$PYTHON_IMAGE" --build-arg UV_IMAGE="$$UV_IMAGE" "$$2" >/dev/null; \
 	  log_info "built $$1:latest-build"; }
 
 .PHONY: images
@@ -620,3 +642,7 @@ gif: ## Convert a cast to a GIF with agg (CAST=<file>, default the newest cast)
 	agg --idle-time-limit "$(GIF_IDLE)" --last-frame-duration 3 "$$cast" "$$gif"
 	[[ -s "$$gif" ]] || { echo "empty gif: $$gif" >&2; exit 1; }
 	echo "gif: $$gif"
+
+.PHONY: chatgpt-login
+chatgpt-login: ## Sign in to ChatGPT for LiteLLM (opens a device-code flow; no API key)
+	@$(ROOT)/scripts/chatgpt-login.sh

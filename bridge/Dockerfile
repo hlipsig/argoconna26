@@ -4,6 +4,10 @@ ARG PYTHON_IMAGE
 ARG UV_IMAGE
 FROM ${UV_IMAGE} AS uv
 FROM ${PYTHON_IMAGE}
+# Trust the same public CA bundle as the WSL host when a corporate proxy is present.
+RUN --mount=type=secret,id=host_ca,required=false \
+    if [ -s /run/secrets/host_ca ]; then cp /run/secrets/host_ca /etc/ssl/certs/ca-certificates.crt; fi
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 UV_LINK_MODE=copy
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app

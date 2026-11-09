@@ -81,7 +81,13 @@ grafana:
       searchNamespace: ALL
   # Headroom over Grafana 13's ~250Mi idle; GOMEMLIMIT makes the GC work harder before the
   # cgroup limit. The OOM itself was the gzip leak above.
+  extraConfigmapMounts:
+    - name: host-trust
+      configMap: demo-ca-bundle
+      mountPath: /trust
+      readOnly: true
   env:
+    SSL_CERT_FILE: /trust/ca-bundle.pem
     GOMEMLIMIT: 768MiB
   resources:
     requests: {cpu: 50m, memory: 256Mi}

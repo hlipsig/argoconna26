@@ -108,7 +108,8 @@ sequenceDiagram
 
 ## Quick Start
 
-You need Docker, the pinned CLI tools (`make vendor` checks them), an LLM key, and a GitHub App
+This fork uses a ChatGPT subscription through LiteLLM. You need Docker, the pinned CLI tools
+(`make vendor` checks them), a ChatGPT device login, and a GitHub App
 for rungs 1 to 3. [docs/07](docs/07-setup.md) lists the tools and secrets and covers running it
 from your own fork; [docs/github-setup.md](docs/github-setup.md) covers the App and rulesets.
 
@@ -116,10 +117,11 @@ from your own fork; [docs/github-setup.md](docs/github-setup.md) covers the App 
 cp .env.example .env && chmod 600 .env     # then fill in the keys
 make brew                                  # optional: brew bundle installs the CLI tools (not Docker)
 make vendor                                # tools present and at the pinned versions
+make chatgpt-login                         # authorize the subscription backend
 make operator-clone                        # the clone the operator scripts push from
 make build-all                             # kind cluster and the whole stack (~5 min, safe to run twice)
-scripts/stage-day.sh morning               # the talk's start state, preflight, budget check
-make demo-full                             # the whole talk, scene by scene
+make reset-rung-1                         # prepare the first scene
+make demo-rung-1                           # suggest: incident, agent comment, human fix
 ```
 
 Argo CD pulls from GitHub, so the cluster follows what is pushed to `main` (`TRACKED_BRANCH` in

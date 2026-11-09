@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/argo-multiverse-labs/argoconna26.git
+    repoURL: https://github.com/hlipsig/argoconna26.git
     targetRevision: main
     path: cdevents-sim/deploy
   destination:

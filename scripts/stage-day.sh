@@ -106,6 +106,11 @@ make_target() { make -C "$(main_root)" --no-print-directory "$@"; }
 #   live L remaining R cumulative C budget B
 # shellcheck disable=SC2329
 llm_budget_ok() {
+  if [[ "${LLM_PROVIDER:-}" == chatgpt ]]; then
+    "$LITELLM" spend
+    log_warn "Dollar budget check unavailable for ChatGPT; preflight checks key rate limits instead"
+    return
+  fi
   local line min="${STAGE_LLM_MIN_REMAINING_USD:-2.00}"
   line="$("$LITELLM" spend)" || { log_error "litellm.sh spend failed"; return 1; }
   printf '%s\n' "$line"
